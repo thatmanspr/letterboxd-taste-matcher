@@ -10,6 +10,8 @@ Taste Matcher is a desktop app (built with Electron + Node.js) that reads your L
 
 Before we begin, I made this as a part of my university project, so should it interest you, a Statement of Work, SRS Document, SDS Document, Fully written Report and an Agile Sprint Tracker Document have also been uploaded! Thank you.
 
+And, test ratings.csv and watchlist.csv files have been attached for a test run. For testing purposes, here's a TMDB API key : ```a83caab71b9566b8e39e8bc4073f69f0```. It is highly recommended, that you get your own TMDB key.
+
 ### 📂 Source Code
 
 The full source is available on the main branch:
