@@ -43,8 +43,62 @@ const TMDB_CACHE_FILE       = path.join(CACHE_DIR, 'tmdb_cache.json');
 const DERIVED_CACHE_FILE    = path.join(CACHE_DIR, 'derived_cache.json');
 const STATE_FILE            = path.join(CACHE_DIR, 'data_state.json');
 const HIDDEN_REWATCHES_FILE = path.join(CACHE_DIR, 'hidden_rewatches.json');
+const USER_WEIGHTS_FILE     = path.join(CACHE_DIR, 'user_weights.json');
+
+// ─── Default scoring weights (must sum to 1.00) ───────────────────────────────
+const DEFAULT_WEIGHTS = {
+  genre:      0.18,
+  keyword:    0.22,
+  director:   0.10,
+  writer:     0.08,
+  tmdb:       0.15,
+  neighbour:  0.10,
+  geo:        0.07,
+  decade:     0.05,
+  collection: 0.05
+};
+
+// Active weights (may be overridden by user priority ranking)
+let activeWeights = { ...DEFAULT_WEIGHTS };
 
 let hiddenRewatches = new Set();
+
+// ─── User weight persistence ──────────────────────────────────────────────────
+
+function loadUserWeightsFromDisk() {
+  try {
+    if (!fs.existsSync(USER_WEIGHTS_FILE)) return;
+    const obj = JSON.parse(fs.readFileSync(USER_WEIGHTS_FILE, 'utf-8'));
+    if (obj && typeof obj === 'object') {
+      activeWeights = { ...DEFAULT_WEIGHTS, ...obj };
+      console.log('User weights loaded from disk.');
+    }
+  } catch (e) { console.warn('Failed to load user weights:', e.message); }
+}
+
+function saveUserWeightsToDisk() {
+  ensureCacheDir();
+  try {
+    fs.writeFileSync(USER_WEIGHTS_FILE, JSON.stringify(activeWeights, null, 2), 'utf-8');
+  } catch (e) { console.warn('Failed to save user weights:', e.message); }
+}
+
+/**
+ * Given a priority ranking (array of dimension keys, highest priority first),
+ * redistribute weights using a geometric decay so rank 1 gets the most weight.
+ */
+function weightsFromPriorityRanking(ranking) {
+  const decay = 0.75;
+  const raw = ranking.map((_, i) => Math.pow(decay, i));
+  const total = raw.reduce((s, v) => s + v, 0);
+  const weights = {};
+  ranking.forEach((key, i) => { weights[key] = parseFloat((raw[i] / total).toFixed(4)); });
+  // Fix rounding: add any residual to the top-ranked key
+  const sum = Object.values(weights).reduce((s, v) => s + v, 0);
+  const residual = parseFloat((1 - sum).toFixed(4));
+  if (residual !== 0) weights[ranking[0]] = parseFloat((weights[ranking[0]] + residual).toFixed(4));
+  return weights;
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -675,17 +729,18 @@ function scoreItem(movie, taste) {
   const candMeta = { tmdbId: movie.id, genres: genreIds, keywords, directors, decade: m.decade, regions };
   const neighbor  = neighborComponent(candMeta, ratedItemsMeta);
 
-  // Weights intentionally sum to 1.00
+  // Weights use activeWeights (user-customisable; default sums to 1.00)
+  const w = activeWeights;
   const score =
-    0.18 * genreAff  +
-    0.10 * dirAff    +
-    0.08 * writerAff +
-    0.22 * kwAff     +
-    0.07 * geoAff    +
-    0.05 * decadeAff +
-    0.05 * collAff   +
-    0.15 * tmdbNorm  +
-    0.10 * neighbor;
+    w.genre      * genreAff  +
+    w.director   * dirAff    +
+    w.writer     * writerAff +
+    w.keyword    * kwAff     +
+    w.geo        * geoAff    +
+    w.decade     * decadeAff +
+    w.collection * collAff   +
+    w.tmdb       * tmdbNorm  +
+    w.neighbour  * neighbor;
 
   return {
     genreAff, dirAff, writerAff, geoAff, decadeAff,
@@ -898,6 +953,44 @@ app.post('/api/invalidate-recommendations', (req, res) => {
     saveDerivedCacheToDisk();
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: 'Failed to invalidate.' }); }
+});
+
+// ─── User weight endpoints ────────────────────────────────────────────────────
+
+app.get('/api/user-weights', (_, res) => {
+  res.json({ weights: activeWeights, defaultWeights: DEFAULT_WEIGHTS });
+});
+
+app.post('/api/user-weights', (req, res) => {
+  try {
+    const { ranking } = req.body; // array of 9 dimension keys, highest priority first
+    if (!Array.isArray(ranking) || ranking.length !== 9) {
+      return res.status(400).json({ error: 'ranking must be an array of 9 dimension keys.' });
+    }
+    const validKeys = Object.keys(DEFAULT_WEIGHTS);
+    if (!ranking.every(k => validKeys.includes(k))) {
+      return res.status(400).json({ error: 'Unknown dimension key in ranking.' });
+    }
+    activeWeights = weightsFromPriorityRanking(ranking);
+    saveUserWeightsToDisk();
+    // Invalidate scored caches so the new weights take effect on next fetch
+    cachedRecommendations = null;
+    cachedRewatchRanking  = null;
+    saveDerivedCacheToDisk();
+    console.log('User weights updated:', JSON.stringify(activeWeights));
+    res.json({ ok: true, weights: activeWeights });
+  } catch (e) { res.status(500).json({ error: 'Failed to update weights.' }); }
+});
+
+app.post('/api/user-weights/reset', (_, res) => {
+  try {
+    activeWeights = { ...DEFAULT_WEIGHTS };
+    saveUserWeightsToDisk();
+    cachedRecommendations = null;
+    cachedRewatchRanking  = null;
+    saveDerivedCacheToDisk();
+    res.json({ ok: true, weights: activeWeights });
+  } catch (e) { res.status(500).json({ error: 'Failed to reset weights.' }); }
 });
 
 app.get('/api/overlap', async (req, res) => {
@@ -1184,6 +1277,7 @@ function startServer(port) {
     loadMovieCacheFromDisk();
     loadDerivedCacheFromDisk();
     loadHiddenRewatches();
+    loadUserWeightsFromDisk();
     loadAllData();
     app.listen(port, () => {
       console.log(`\n✅  Taste Matcher v2 → http://localhost:${port}`);
