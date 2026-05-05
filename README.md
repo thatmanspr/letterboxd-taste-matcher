@@ -4,7 +4,7 @@
 
 **Turn your Letterboxd watchlist into a perfectly ranked queue.**
 
-The all new Taste Matcher v3 is a desktop app (built with Electron + Node.js) that reads your Letterboxd ratings, fetches rich metadata from TMDb, builds a multi-dimensional taste model, and ranks every film in your watchlist from most-likely-to-enjoy to least. Everything runs locally — no accounts, no cloud, no subscriptions.
+Taste Matcher is a desktop app (built with Electron + Node.js) that reads your Letterboxd ratings, fetches rich metadata from TMDb, builds a multi-dimensional taste model, and ranks every film in your watchlist from most-likely-to-enjoy to least. Everything runs locally — no accounts, no cloud, no subscriptions.
 
 ### 📂 Source Code
 
@@ -69,6 +69,7 @@ cache/
   derived_cache.json     # taste model, ranked watchlist, rewatch ranking
   data_state.json        # live ratings/watchlist/overlap state
   hidden_rewatches.json  # rewatches you've chosen to permanently hide
+  user_weights.json      # your saved ranking priority preferences
 ```
 
 ---
@@ -146,6 +147,32 @@ Per-card actions:
 
 ---
 
+### 🎛 Ranking Priorities
+
+Before the ranked watchlist is computed for the first time in a session, you're presented with a priority screen that lets you choose which signals matter most to you personally. You can drag the nine dimensions into any order — whatever's at the top gets weighted most heavily.
+
+The nine dimensions are:
+
+| Dimension | What it measures |
+|-----------|-----------------|
+| **Themes & Keywords** | How well the film's subjects and tagged themes match topics you consistently enjoy |
+| **Genre Match** | How strongly the film's genres align with your highest-rated genre preferences |
+| **Critical Reception** | The film's TMDb community rating, Bayesian-adjusted for vote count |
+| **Similar Films You Loved** | How closely this film resembles other films in your history that you rated highly (k-nearest-neighbour) |
+| **Director** | How highly you've rated this director's past work |
+| **Writer / Screenplay** | Affinity for the film's writers based on your rating history |
+| **Country & Region** | How often you tend to enjoy films from this country or region |
+| **Era / Decade** | Whether you consistently rate films from this era higher than others |
+| **Film Series / Collection** | Whether the film belongs to a franchise you've already shown you enjoy |
+
+Weights are distributed using a geometric decay across the ranking — the top-ranked dimension gets the largest share, each step down gets progressively less. All nine always contribute; nothing is zeroed out.
+
+Your priority order is saved to `user_weights.json` and persists across sessions. You can update it any time via ⚙ Settings → **Ranking Priorities**, and the watchlist will immediately re-score using the new order — no TMDb calls, no waiting.
+
+The default order (if you skip the screen or reset) matches the original algorithm weights.
+
+---
+
 ### 🔁 Ranked Rewatches
 
 Films that appear in both your ratings and your watchlist (i.e. films you've already seen but kept on your watchlist). Ranked by a formula that keeps your own rating as the anchor, using the taste model only as a modifier:
@@ -207,6 +234,7 @@ Films from your CSVs that couldn't be matched to a TMDb entry. Each item shows:
 Accessible via the ⚙ button. Shows live stats (rated films, watchlist size, rewatches, unresolved count) and a TMDb connection badge.
 
 Actions:
+- **🎛 Ranking Priorities** — reorder the nine scoring dimensions; watchlist re-scores immediately on save
 - **📂 New Ratings CSV** — pick a new ratings export file; imports it and resets to the new baseline
 - **📂 New Watchlist CSV** — pick a new watchlist/list CSV; reloads the watchlist while keeping all ratings and the TMDb cache intact
 - **⚠ Reset to CSV** — discards all manual in-session mutations and reverts the entire state back to the originally imported CSV files
@@ -307,18 +335,32 @@ Top 30 neighbours above a 0.12 similarity threshold are used. The component conf
 
 ```
 predictedScore =
-  0.18 × genreAffinity        +
-  0.22 × keywordAffinity      +
-  0.10 × directorAffinity     +
-  0.08 × writerAffinity       +
-  0.15 × tmdbScoreNorm        +
-  0.10 × neighbourSimilarity  +
-  0.07 × geoAffinity          +
-  0.05 × decadeAffinity       +
-  0.05 × collectionAffinity
+  w₁ × genreAffinity        +
+  w₂ × keywordAffinity      +
+  w₃ × directorAffinity     +
+  w₄ × writerAffinity       +
+  w₅ × tmdbScoreNorm        +
+  w₆ × neighbourSimilarity  +
+  w₇ × geoAffinity          +
+  w₈ × decadeAffinity       +
+  w₉ × collectionAffinity
 ```
 
-Weights sum to **1.00**. All components are normalized to 0–1 before weighting.
+Weights sum to **1.00** and are distributed according to your **Ranking Priorities** setting (see above). The default distribution matches the values below:
+
+| Dimension | Default weight |
+|-----------|---------------|
+| Keyword / Themes | 0.22 |
+| Genre | 0.18 |
+| TMDb Score | 0.15 |
+| Neighbour Similarity | 0.10 |
+| Director | 0.10 |
+| Writer | 0.08 |
+| Geography | 0.07 |
+| Decade | 0.05 |
+| Collection | 0.05 |
+
+All components are normalized to 0–1 before weighting.
 
 ### 6. Ranking
 
@@ -334,10 +376,12 @@ Scores are converted to a match percentage and sorted descending. Rewatches use 
 | `derived_cache.json` | Taste model, ranked watchlist, rewatch ranking |
 | `data_state.json` | Live ratings + watchlist + overlap (survives restarts) |
 | `hidden_rewatches.json` | Permanently hidden rewatch entries |
+| `user_weights.json` | Your saved ranking priority preferences |
 
 **First run** — slow, fetches TMDb data for every film in both CSVs.  
 **Every subsequent run** — instant, loads everything from disk.  
-**After mutations** — only affected caches are invalidated; TMDb data is never re-fetched.
+**After mutations** — only affected caches are invalidated; TMDb data is never re-fetched.  
+**After changing priorities** — only the scored rankings are invalidated; all TMDb data and taste profiles are reused as-is.
 
 ### Full Wipe (Fresh Start)
 
@@ -374,6 +418,9 @@ The Express server runs on `http://127.0.0.1:47291` internally. All routes are a
 | `/api/failed-items` | GET | Unresolved films list |
 | `/api/app-status` | GET | Stats for the settings panel |
 | `/api/export-ranked-watchlist` | GET | Download ranked Letterboxd CSV (`?includeRewatches=true\|false`) |
+| `/api/user-weights` | GET | Current scoring weights and defaults |
+| `/api/user-weights` | POST | Save a new priority ranking (`{ ranking: string[] }`) |
+| `/api/user-weights/reset` | POST | Reset weights to defaults |
 | `/api/reload-watchlist` | POST | Re-parse watchlist CSV, recompute overlap, keep ratings intact |
 | `/api/reset-state` | POST | Revert all state to original CSV baseline |
 | `/api/invalidate-recommendations` | POST | Force a fresh recalculation on next `/api/recommendations` call |
