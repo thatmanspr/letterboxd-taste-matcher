@@ -1041,3 +1041,226 @@ async function apiPost(url, body = {}) {
 
 /* ─── Init ───────────────────────────────────────────────────────────────────── */
 goHome();
+
+/* ─── Priority Ranking System ───────────────────────────────────────────────── */
+
+const DIMENSION_META = [
+  {
+    key: 'keyword',
+    label: 'Themes & Keywords',
+    icon: '🏷',
+    desc: 'How well the film\'s themes, subjects, and tagged keywords align with topics you consistently enjoy — e.g. heist films, coming-of-age, road trips.'
+  },
+  {
+    key: 'genre',
+    label: 'Genre Match',
+    icon: '🎭',
+    desc: 'How strongly the film\'s genres match the ones you historically rate highest — action, drama, horror, animation, etc.'
+  },
+  {
+    key: 'tmdb',
+    label: 'Critical Reception',
+    icon: '⭐',
+    desc: 'The film\'s overall rating on TMDb, adjusted for Bayesian smoothing to avoid bias towards obscure films with few votes.'
+  },
+  {
+    key: 'neighbour',
+    label: 'Similar Films You Loved',
+    icon: '🔗',
+    desc: 'How closely this film resembles other films in your collection that you rated highly — a k-nearest-neighbour signal.'
+  },
+  {
+    key: 'director',
+    label: 'Director',
+    icon: '🎬',
+    desc: 'Whether you\'ve enjoyed films by this director before and how highly you\'ve rated their past work.'
+  },
+  {
+    key: 'writer',
+    label: 'Writer / Screenplay',
+    icon: '✍',
+    desc: 'How well the film\'s writers match your taste — useful if you gravitate towards specific screenwriters or storytelling styles.'
+  },
+  {
+    key: 'geo',
+    label: 'Country & Region',
+    icon: '🌍',
+    desc: 'Your affinity for films from a particular country or region — e.g. if you love French cinema or South Korean films.'
+  },
+  {
+    key: 'decade',
+    label: 'Era / Decade',
+    icon: '📅',
+    desc: 'How often you tend to enjoy films from the same era — e.g. if you consistently rate 80s films higher than recent releases.'
+  },
+  {
+    key: 'collection',
+    label: 'Film Series / Collection',
+    icon: '🗂',
+    desc: 'Whether the film is part of a franchise or collection you\'ve already shown you enjoy — sequels, trilogies, cinematic universes.'
+  }
+];
+
+// Current priority order (array of keys, index 0 = highest priority)
+let currentPriorityRanking = DIMENSION_META.map(d => d.key);
+let priorityModalCallback  = null; // called after saving (null = just editing)
+
+// ─── Load existing weights from server and derive ranking order ───────────────
+async function loadCurrentPriorityRanking() {
+  try {
+    const data = await apiFetch('/api/user-weights');
+    const w = data.weights;
+    // Sort dimension keys by their current weight, descending
+    currentPriorityRanking = DIMENSION_META.map(d => d.key)
+      .sort((a, b) => (w[b] || 0) - (w[a] || 0));
+  } catch {}
+}
+
+// ─── Open the priority modal ──────────────────────────────────────────────────
+// firstLaunch=true: called before the first ranked watchlist render
+// firstLaunch=false: called from settings, just editing
+async function openPriorityModal(firstLaunch = false) {
+  await loadCurrentPriorityRanking();
+  priorityModalCallback = firstLaunch ? () => loadRecommendations() : null;
+
+  const overlay = document.getElementById('priorityModal');
+  overlay.classList.remove('hidden');
+  renderPriorityList(currentPriorityRanking);
+
+  document.getElementById('priorityModalClose').onclick = () => {
+    overlay.classList.add('hidden');
+    if (firstLaunch) loadRecommendations(); // still proceed with defaults
+  };
+  overlay.onclick = (e) => {
+    if (e.target === overlay) {
+      overlay.classList.add('hidden');
+      if (firstLaunch) loadRecommendations();
+    }
+  };
+  document.getElementById('priorityResetBtn').onclick = async () => {
+    await apiPost('/api/user-weights/reset', {});
+    overlay.classList.add('hidden');
+    showToast('Reset to defaults — recalculating…', 'info');
+    loadRecommendations();
+  };
+  document.getElementById('prioritySaveBtn').onclick = async () => {
+    const items = document.querySelectorAll('#priorityList .priority-item');
+    const ranking = Array.from(items).map(el => el.dataset.key);
+    try {
+      const result = await apiPost('/api/user-weights', { ranking });
+      if (result.error) { showToast('Error: ' + result.error, 'error'); return; }
+      overlay.classList.add('hidden');
+      showToast('Priorities saved — recalculating…', 'success');
+      loadRecommendations();
+    } catch {
+      showToast('Failed to save priorities.', 'error');
+    }
+  };
+}
+
+// ─── Render the draggable priority list ──────────────────────────────────────
+function renderPriorityList(ranking) {
+  const list = document.getElementById('priorityList');
+  list.innerHTML = '';
+  ranking.forEach((key, idx) => {
+    const meta = DIMENSION_META.find(d => d.key === key);
+    if (!meta) return;
+    const li = document.createElement('li');
+    li.className = 'priority-item';
+    li.dataset.key = key;
+    li.draggable = true;
+    li.innerHTML = `
+      <span class="priority-rank">${idx + 1}</span>
+      <span class="priority-drag-handle" title="Drag to reorder">⠿</span>
+      <span class="priority-icon">${meta.icon}</span>
+      <div class="priority-text">
+        <span class="priority-label">${meta.label}</span>
+        <span class="priority-desc">${meta.desc}</span>
+      </div>
+      <div class="priority-arrows">
+        <button class="priority-arrow-btn" data-dir="up" title="Move up" ${idx === 0 ? 'disabled' : ''}>▲</button>
+        <button class="priority-arrow-btn" data-dir="down" title="Move down" ${idx === ranking.length - 1 ? 'disabled' : ''}>▼</button>
+      </div>
+    `;
+
+    // Arrow buttons
+    li.querySelectorAll('.priority-arrow-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const items = Array.from(document.querySelectorAll('#priorityList .priority-item'));
+        const keys = items.map(el => el.dataset.key);
+        const i = keys.indexOf(key);
+        if (btn.dataset.dir === 'up' && i > 0) {
+          [keys[i], keys[i - 1]] = [keys[i - 1], keys[i]];
+        } else if (btn.dataset.dir === 'down' && i < keys.length - 1) {
+          [keys[i], keys[i + 1]] = [keys[i + 1], keys[i]];
+        }
+        currentPriorityRanking = keys;
+        renderPriorityList(keys);
+      });
+    });
+
+    list.appendChild(li);
+  });
+
+  // Drag-and-drop
+  let dragSrc = null;
+  list.querySelectorAll('.priority-item').forEach(item => {
+    item.addEventListener('dragstart', e => {
+      dragSrc = item;
+      e.dataTransfer.effectAllowed = 'move';
+      item.classList.add('dragging');
+    });
+    item.addEventListener('dragend', () => {
+      item.classList.remove('dragging');
+      list.querySelectorAll('.priority-item').forEach(i => i.classList.remove('drag-over'));
+    });
+    item.addEventListener('dragover', e => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      if (item !== dragSrc) {
+        list.querySelectorAll('.priority-item').forEach(i => i.classList.remove('drag-over'));
+        item.classList.add('drag-over');
+      }
+    });
+    item.addEventListener('drop', e => {
+      e.preventDefault();
+      if (!dragSrc || dragSrc === item) return;
+      const items = Array.from(list.querySelectorAll('.priority-item'));
+      const fromIdx = items.indexOf(dragSrc);
+      const toIdx   = items.indexOf(item);
+      const keys = items.map(el => el.dataset.key);
+      keys.splice(toIdx, 0, keys.splice(fromIdx, 1)[0]);
+      currentPriorityRanking = keys;
+      renderPriorityList(keys);
+    });
+  });
+}
+
+// ─── Hook into loadRecommendations to show modal on first launch ──────────────
+const _originalLoadRecommendations = loadRecommendations;
+window._priorityShownThisSession = false;
+
+window.loadRecommendationsWithPriority = async function() {
+  if (!window._priorityShownThisSession) {
+    window._priorityShownThisSession = true;
+    // Check if user has ever set custom weights
+    try {
+      const data = await apiFetch('/api/user-weights');
+      const isDefault = JSON.stringify(data.weights) === JSON.stringify(data.defaultWeights);
+      if (isDefault) {
+        openPriorityModal(true);
+        return;
+      }
+    } catch {}
+  }
+  loadRecommendations();
+};
+
+// Replace the action bar button behaviour
+document.addEventListener('DOMContentLoaded', () => {
+  // Patch the action button if it's using inline onclick
+  document.querySelectorAll('[onclick="loadRecommendations()"]').forEach(btn => {
+    btn.removeAttribute('onclick');
+    btn.addEventListener('click', window.loadRecommendationsWithPriority);
+  });
+});
