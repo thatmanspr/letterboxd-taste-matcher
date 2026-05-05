@@ -1,3 +1,5 @@
+![Banner](banner.jpg)
+
 # 🎬 Taste Matcher v3
 
 **Turn your Letterboxd watchlist into a perfectly ranked queue.**
