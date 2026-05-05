@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Taste Matcher</title>
+  <link rel="stylesheet" href="css/main.css">
+</head>
+<body>
+
+  <!-- ── Top bar ─────────────────────────────────────────────────── -->
+  <div class="top-row">
+    <div class="top-left">
+      <span class="app-logo">🎬 Taste Matcher</span>
+    </div>
+    <div class="top-actions">
+      <button id="toggleViewBtn" type="button" class="top-btn ghost">☷ List View</button>
+      <button id="backButton" type="button" class="top-btn ghost">← Home</button>
+      <button id="settingsBtn" type="button" class="top-btn ghost">⚙ Settings</button>
+    </div>
+  </div>
+
+  <!-- ── Action bar ──────────────────────────────────────────────── -->
+  <div class="actions">
+    <button class="action-btn" onclick="loadRecommendations()">
+      <span class="action-icon">🎯</span>
+      <span>Ranked Watchlist</span>
+    </button>
+    <button class="action-btn" onclick="loadRewatchRanking()">
+      <span class="action-icon">🔁</span>
+      <span>Ranked Rewatches</span>
+    </button>
+    <button class="action-btn" onclick="loadGenreProfile()">
+      <span class="action-icon">📊</span>
+      <span>Genre Profile</span>
+    </button>
+    <button class="action-btn" onclick="loadSearchRatings()">
+      <span class="action-icon">🔍</span>
+      <span>Search Seen Films</span>
+    </button>
+    <button class="action-btn" onclick="loadFailedItems()">
+      <span class="action-icon">⚠️</span>
+      <span>Unresolved Films</span>
+    </button>
+    <div class="action-divider"></div>
+    <button class="action-btn secondary" onclick="promptAddRating()">
+      <span class="action-icon">➕</span>
+      <span>Add Rating</span>
+    </button>
+    <button class="action-btn secondary" onclick="promptAddToWatchlist()">
+      <span class="action-icon">📋</span>
+      <span>Add to Watchlist</span>
+    </button>
+    <button class="action-btn secondary" onclick="reloadWatchlist()">
+      <span class="action-icon">↻</span>
+      <span>Reload CSV</span>
+    </button>
+    <button class="action-btn secondary" onclick="exportRankedWatchlist()">
+      <span class="action-icon">⬇</span>
+      <span>Export CSV</span>
+    </button>
+  </div>
+
+  <!-- ── Main output ─────────────────────────────────────────────── -->
+
+  <!-- ── Add Rating / Add to Watchlist Modal ─────────────────────── -->
+  <div id="tmModal" class="tm-modal-overlay hidden" role="dialog" aria-modal="true">
+    <div class="tm-modal">
+      <div class="tm-modal-header">
+        <h3 id="tmModalTitle">Add Rating</h3>
+        <button class="tm-modal-close" id="tmModalClose" aria-label="Close">✕</button>
+      </div>
+      <div class="tm-modal-body">
+        <div class="tm-field">
+          <label for="tmLbUrl">Letterboxd URL <span class="tm-required">*</span></label>
+          <input id="tmLbUrl" type="url" placeholder="https://letterboxd.com/film/…" autocomplete="off">
+          <span class="tm-hint">e.g. https://letterboxd.com/film/the-godfather/</span>
+        </div>
+        <div class="tm-field">
+          <label for="tmTmdbUrl">TMDb URL <span class="tm-recommended">(recommended)</span></label>
+          <input id="tmTmdbUrl" type="url" placeholder="https://www.themoviedb.org/movie/…" autocomplete="off">
+          <span class="tm-hint">Helps match the film accurately. Leave blank to use title instead.</span>
+        </div>
+        <div class="tm-field" id="tmRatingField">
+          <label for="tmRating">Your Rating <span class="tm-required">*</span></label>
+          <div class="tm-star-row" id="tmStarRow"></div>
+          <input id="tmRating" type="number" min="0.5" max="5" step="0.5" placeholder="0.5 – 5" autocomplete="off">
+          <span class="tm-hint">Half-stars OK (0.5, 1, 1.5 … 5)</span>
+        </div>
+      </div>
+      <div class="tm-modal-footer">
+        <button class="tm-btn-cancel" id="tmModalCancel">Cancel</button>
+        <button class="tm-btn-submit" id="tmModalSubmit">Add</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Export Options Modal ────────────────────────────────────────── -->
+  <div id="exportModal" class="tm-modal-overlay hidden" role="dialog" aria-modal="true">
+    <div class="tm-modal" style="width: 400px;">
+      <div class="tm-modal-header">
+        <h3>Export Ranked Watchlist</h3>
+        <button class="tm-modal-close" id="exportModalClose" aria-label="Close">✕</button>
+      </div>
+      <div class="tm-modal-body">
+        <p style="color: #ccc; font-size: 14px; margin-top: 0;">How would you like to export your list?</p>
+        <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 10px;">
+          <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
+            <input type="radio" name="exportIncludeRewatches" value="false" checked style="margin-top: 3px;">
+            <div>
+              <div style="font-weight: 600; color: #e8e8e8; font-size: 14px;">Watchlist Only</div>
+              <div style="font-size: 12px; color: #888;">Export only films you haven't seen.</div>
+            </div>
+          </label>
+          <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
+            <input type="radio" name="exportIncludeRewatches" value="true" style="margin-top: 3px;">
+            <div>
+              <div style="font-weight: 600; color: #e8e8e8; font-size: 14px;">Include Rewatches</div>
+              <div style="font-size: 12px; color: #888;">Mix your ranked rewatches into the watchlist.</div>
+            </div>
+          </label>
+        </div>
+      </div>
+      <div class="tm-modal-footer">
+        <button class="tm-btn-cancel" id="exportModalCancel">Cancel</button>
+        <button class="tm-btn-submit" id="exportModalSubmit">Export CSV</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Resolve Options Modal ───────────────────────────────────────── -->
+  <div id="resolveModal" class="tm-modal-overlay hidden" role="dialog" aria-modal="true">
+    <div class="tm-modal" style="width: 400px;">
+      <div class="tm-modal-header">
+        <h3 id="resolveModalTitle">Resolve Film</h3>
+        <button class="tm-modal-close" id="resolveModalClose" aria-label="Close">✕</button>
+      </div>
+      <div class="tm-modal-body">
+        <p style="color: #ccc; font-size: 14px; margin-top: 0;">What list does this film belong in?</p>
+        <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 10px;">
+          <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
+            <input type="radio" name="resolveMode" value="rating" checked style="margin-top: 3px;">
+            <div>
+              <div style="font-weight: 600; color: #e8e8e8; font-size: 14px;">Rated Film</div>
+              <div style="font-size: 12px; color: #888;">I have already seen and rated this film.</div>
+            </div>
+          </label>
+          <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
+            <input type="radio" name="resolveMode" value="watchlist" style="margin-top: 3px;">
+            <div>
+              <div style="font-weight: 600; color: #e8e8e8; font-size: 14px;">Watchlist Item</div>
+              <div style="font-size: 12px; color: #888;">I want to add this to my watchlist.</div>
+            </div>
+          </label>
+        </div>
+      </div>
+      <div class="tm-modal-footer">
+        <button class="tm-btn-cancel" id="resolveModalCancel">Cancel</button>
+        <button class="tm-btn-submit" id="resolveModalSubmit">Continue</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Toast notifications ────────────────────────────────────────── -->
+  <div id="toastContainer" aria-live="polite" aria-atomic="false"></div>
+
+  <!-- ── Confirm dialog (replaces window.confirm) ───────────────────── -->
+  <div id="confirmModal" class="tm-modal-overlay hidden" role="alertdialog" aria-modal="true">
+    <div class="tm-modal tm-confirm-modal">
+      <div class="tm-modal-header">
+        <h3 id="confirmModalTitle">Confirm</h3>
+      </div>
+      <div class="tm-modal-body">
+        <p id="confirmModalMessage" style="margin:0;color:#ccc;line-height:1.5;"></p>
+      </div>
+      <div class="tm-modal-footer">
+        <button class="tm-btn-cancel" id="confirmModalCancel">Cancel</button>
+        <button class="tm-btn-submit" id="confirmModalOk">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="output"></div>
+
+  <!-- ── Settings drawer ─────────────────────────────────────────── -->
+  <div id="settingsDrawer" class="drawer hidden">
+    <div class="drawer-inner">
+      <div class="drawer-header">
+        <h2>Settings</h2>
+        <button id="closeDrawerBtn" class="drawer-close">✕</button>
+      </div>
+      <div class="drawer-body">
+        <div id="appStatusInfo" class="status-block"></div>
+
+        <div class="settings-section">
+          <div class="settings-label">Reload / Replace CSVs</div>
+          <div class="settings-desc">Pick new CSV files without restarting the app.</div>
+          <div class="settings-row">
+            <button class="btn-settings" id="reloadRatingsBtn">📂 New Ratings CSV</button>
+            <button class="btn-settings" id="reloadWatchlistBtn">📂 New Watchlist CSV</button>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-label">Reset State</div>
+          <div class="settings-desc">Discard all manual changes and reload from CSVs.</div>
+          <button class="btn-settings danger" onclick="resetState(); closeDrawer();">⚠ Reset to CSV</button>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-label">Change API Key or CSVs</div>
+          <div class="settings-desc">Go back to the setup screen.</div>
+          <button class="btn-settings" id="goSetupBtn">← Back to Setup</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
