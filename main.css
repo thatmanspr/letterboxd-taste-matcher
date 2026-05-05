@@ -1432,3 +1432,170 @@ button {
   vertical-align: middle;
   margin-left: 8px;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   Priority Ranking Modal
+═══════════════════════════════════════════════════════════════ */
+
+.priority-modal {
+  width: min(680px, 96vw);
+  max-height: 90vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.priority-modal .tm-modal-body {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.priority-intro {
+  font-size: 14px;
+  color: #bbb;
+  margin: 0 0 16px;
+  line-height: 1.5;
+}
+
+.priority-hint {
+  font-size: 12px;
+  color: #666;
+  margin: 14px 0 0;
+  text-align: center;
+}
+
+/* ── Draggable list ── */
+
+.priority-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.priority-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 8px;
+  cursor: grab;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  user-select: none;
+}
+
+.priority-item:hover {
+  background: #252525;
+  border-color: #4a4a4a;
+}
+
+.priority-item.dragging {
+  opacity: 0.45;
+  cursor: grabbing;
+}
+
+.priority-item.drag-over {
+  border-color: #e8c96e;
+  background: #2a2718;
+  transform: scale(1.01);
+}
+
+.priority-rank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  background: #333;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 700;
+  color: #e8c96e;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.priority-item.drag-over .priority-rank,
+.priority-item:nth-child(1) .priority-rank { background: #3a3010; }
+
+.priority-drag-handle {
+  font-size: 18px;
+  color: #555;
+  cursor: grab;
+  margin-top: 1px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.priority-drag-handle:hover { color: #999; }
+
+.priority-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.priority-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.priority-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e8e8e8;
+  line-height: 1.3;
+}
+
+.priority-desc {
+  font-size: 12px;
+  color: #888;
+  line-height: 1.45;
+}
+
+/* ── Up/Down arrow buttons ── */
+
+.priority-arrows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.priority-arrow-btn {
+  background: none;
+  border: 1px solid #3a3a3a;
+  border-radius: 4px;
+  color: #888;
+  cursor: pointer;
+  font-size: 10px;
+  padding: 2px 6px;
+  line-height: 1.4;
+  transition: background 0.12s, color 0.12s;
+}
+
+.priority-arrow-btn:hover:not(:disabled) {
+  background: #2e2e2e;
+  color: #e8c96e;
+  border-color: #e8c96e;
+}
+
+.priority-arrow-btn:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+/* ── Responsive ── */
+
+@media (max-width: 520px) {
+  .priority-item { flex-wrap: wrap; }
+  .priority-desc { font-size: 11px; }
+  .priority-arrows { flex-direction: row; }
+}
