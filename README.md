@@ -1,42 +1,29 @@
-### Full Youtube Guide
+# 🎬 Taste Matcher v3
 
-[![Watch the video](https://img.youtube.com/vi/gZmlPXZjs9s/0.jpg)](https://www.youtube.com/watch?v=gZmlPXZjs9s)
+**Turn your Letterboxd watchlist into a perfectly ranked queue.**
 
-# 🎬 Taste Matcher – Letterboxd + TMDb Watchlist Ranker
+The all new Taste Matcher v3 is a desktop app (built with Electron + Node.js) that reads your Letterboxd ratings, fetches rich metadata from TMDb, builds a multi-dimensional taste model, and ranks every film in your watchlist from most-likely-to-enjoy to least. Everything runs locally — no accounts, no cloud, no subscriptions.
 
-Taste Matcher is a backend-first Node.js project that:
+### 📂 Source Code
 
-- Reads your **Letterboxd ratings CSV**
-- Reads your **Letterboxd watchlist CSV** (or any list export)
-- Removes **rewatches** (movies appearing in both files)
-- Builds a **multi-dimensional taste model** using TMDb metadata:
-  - genres
-  - directors & writers
-  - countries & regions
-  - decades / eras
-  - keywords (mood / tone / themes)
-  - collections (franchises / sagas)
-- Blends that with a **nearest-neighbour similarity layer** (films most similar to what you already love)
-- Predicts how much you'll like every film in your watchlist
-- Ranks the entire watchlist from **most-likely-to-enjoy → least**
+The full source is available on the main branch:
 
-Includes a clean UI with:
-
-- ⭐ Rewatch list (posters + your rating)
-- ⭐ Genre profile (clickable, expands into films per genre)
-- ⭐ Ranked watchlist (full cards + match percentage)
-
-Everything runs **locally**, no frontend frameworks, no database.
+- [`server.js`](./server.js) — backend engine, taste model, scoring, all API routes
+- [`public/js/app.js`](./public/js/app.js) — frontend logic
+- [`public/css/main.css`](./public/css/main.css) — styles
+- [`public/index.html`](./public/index.html) — UI markup
+- [`electron/main.js`](./electron/main.js) — Electron entry point, IPC, window management
 
 ---
 
 ## 🧱 Tech Stack
 
-- **Node.js + Express** (backend)
-- **TMDb API** (movie/TV metadata)
-- **csv-parse** (Letterboxd CSV reading)
-- **HTML + CSS + vanilla JS** (frontend)
-- **Disk caching** (no repeated TMDb calls)
+- **Electron** — cross-platform desktop wrapper
+- **Node.js + Express** — backend engine (runs in-process, no separate terminal needed)
+- **TMDb API** — movie & TV metadata (genres, directors, keywords, collections, etc.)
+- **csv-parse** — Letterboxd CSV parsing
+- **HTML + CSS + vanilla JS** — frontend (no frameworks)
+- **Disk caching** — all TMDb data and computed state persisted locally, zero repeated API calls
 
 ---
 
@@ -44,499 +31,359 @@ Everything runs **locally**, no frontend frameworks, no database.
 
 ```
 taste-matcher/
-├─ data/
-│  ├─ ratings.csv           # your ratings (Letterboxd export)
-│  └─ watchlist.csv         # your watchlist or any list export (renamed)
+├─ electron/
+│  ├─ main.js           # Electron entry point — window, IPC, server lifecycle
+│  ├─ preload.js        # Context bridge (exposes electronAPI to renderer)
+│  ├─ setup.html        # First-run setup wizard
+│  ├─ loading.html      # Splash screen while server starts
+│  └─ error.html        # Error screen
 ├─ public/
 │  ├─ css/
 │  │  └─ main.css
 │  ├─ js/
 │  │  └─ app.js
 │  └─ index.html
-├─ cache/
-│  ├─ tmdb_cache.json       # TMDb responses saved here
-│  ├─ derived_cache.json    # taste model + recommendations + rewatch ranking
-│  ├─ hidden_rewatches.json # rewatches you chose to hide from ranking
-│  └─ data_state.json       # persisted ratings + watchlist + overlap state
-├─ exported/
-│  └─ ranked-watchlist-*.csv  # Letterboxd-ready list exports
-├─ server.js                # backend logic
-├─ .env                     # TMDb API key + PORT
+├─ server.js            # All backend logic — scoring, caching, API routes
 └─ package.json
 ```
 
-> ⚠️ IMPORTANT:
-> Do NOT commit `.env`, `/data/*`, or `/cache/*` to a public GitHub repo.
+All user data (CSVs, cache, config) is stored in the OS user data directory — never inside the app folder:
+
+| Platform | Path |
+|----------|------|
+| Windows  | `%APPDATA%\Taste Matcher\` |
+| macOS    | `~/Library/Application Support/Taste Matcher/` |
+| Linux    | `~/.config/Taste Matcher/` |
+
+Inside that directory:
+
+```
+config.json              # TMDb key + CSV paths (setup wizard output)
+data/
+  ratings.csv            # your imported ratings
+  watchlist.csv          # your imported watchlist
+cache/
+  tmdb_cache.json        # all TMDb API responses (never re-fetched)
+  derived_cache.json     # taste model, ranked watchlist, rewatch ranking
+  data_state.json        # live ratings/watchlist/overlap state
+  hidden_rewatches.json  # rewatches you've chosen to permanently hide
+```
 
 ---
 
 ## 1️⃣ Requirements
 
-- Node.js **18+**
-- TMDb **Developer API Key**
-- Letterboxd:
+- **Node.js 18+**
+- **TMDb Developer API Key** (free — v3 auth key)
+- **Letterboxd exports:**
   - `ratings.csv`
-  - `watchlist.csv` (or any list export renamed to `watchlist.csv`)
+  - `watchlist.csv` (or any Letterboxd list export)
 
 ---
 
-## 2️⃣ Getting Your Letterboxd CSV Files
+## 2️⃣ First-Run Setup
 
-Place your CSVs inside:
+On first launch, a setup wizard walks you through three steps:
 
-`taste-matcher/data/`
+**Step 1 — Ratings CSV**
+Export from Letterboxd → Settings → Import & Export → Export Your Data. Use `ratings.csv`.
 
-### 🔹 Ratings Export
+**Step 2 — Watchlist CSV**
+Any Letterboxd list CSV works — official watchlist export, a custom list, or a legacy format. The parser handles all of them.
 
-1. Letterboxd → **Settings → Data → Export**
-2. Download **ratings.csv**
-3. This will usually not be the case, but in case the file is not named `ratings.csv`, rename it.
+**Step 3 — TMDb API Key**
+Get a free key at [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api) → Request an API key (v3 auth). Paste it in, hit "Test" to verify, then "Launch App →".
 
-### 🔹 Watchlist Export (now fully universal)
-
-Taste Matcher accepts **any** Letterboxd-generated list CSV:
-
-- "Watchlist → Export" (official format)
-- Any custom list export
-- Old/legacy list formats
-
-Just rename your chosen file to: `watchlist.csv`
-
-When you put the file into `taste-matcher/data/`, **make sure** it's renamed to `watchlist.csv`.
-
-Then click **Reload Watchlist** inside the UI to apply a new list instantly without restarting the server.
+The wizard copies your CSVs into the app's data directory and saves the config. After that, the server starts and the app opens directly every time.
 
 ---
 
-## 3️⃣ Setting Up TMDb API Key
+## 3️⃣ Install & Run (Development)
 
-Go to: https://www.themoviedb.org/settings/api
-
-Generate an API key → V3 authentication.
-
-Edit `.env`:
-
-```
-TMDB_API_KEY=YOUR_KEY_HERE
-PORT=3000
-```
-
-> `.env` is already included. You only fill in your key.
-
----
-
-## 4️⃣ Install Dependencies
-
-Make sure you are inside the project folder:
-
-```
+```bash
+git clone <repo>
 cd taste-matcher
+npm install
+npm start
 ```
 
-Run:
+To build a distributable:
 
+```bash
+npm run dist        # current platform
+npm run dist:win    # Windows installer (NSIS)
 ```
-npm init -y
-npm install express axios csv-parse dotenv
-```
-
-This installs: express, axios, csv-parse, dotenv.
-
-If this completes without errors, you're good.
-
-### Verify installation
-
-```
-node -v
-npm -v
-```
-
-You should see Node **18 or higher**. Any npm version is fine.
 
 ---
 
-## 5️⃣ Start the Server
+## ⭐ Features
 
-```
-node server.js
-```
+### 🎯 Ranked Watchlist
 
-### On first run:
-- Loads CSVs
-- Calls TMDb (movie/TV search + details)
-- Builds genre profile
-- Builds ranked watchlist
-- Saves everything to `/cache/`
+Your entire watchlist, ordered by predicted enjoyment based on your personal taste profile. Each card shows:
 
-### On later runs:
-- Loads from disk cache
-- Zero API calls
-- Instant startup
-
----
-
-## 6️⃣ Open the UI
-
-Open: http://localhost:3000/
-
----
-
-## ⭐ Rewatches (Removed From Ranking)
-
-Movies found in both your ratings and watchlist.
-
-Each card shows:
-
-- Poster
-- Title + Year
+- Poster, title, year
 - Genres
-- TMDb rating
-- **Your rating**
-- Link to Letterboxd
+- TMDb community rating
+- Match percentage (colour-coded progress bar)
+- Global rank in your watchlist
+- Score breakdown pills (top contributing factors)
+- Director names
 
-These are **excluded from recommendations**, but their ratings are **included** in taste calculation.
+**Filters:**
+- Text search (title or genre)
+- Exact year (e.g. `2019`)
+- Decade (e.g. `1990s`)
+- Director filter — All / Only directors you've seen before / Only new directors
+
+**↻ Recalculate button** — forces a fresh re-score of the entire watchlist using your current ratings and taste model, without making any new TMDb API calls.
+
+Per-card actions:
+- **Mark watched & rate** — removes the film from the watchlist, prompts for a star rating, adds it to your ratings and moves it to the rewatch list. Rankings update immediately.
+- **Remove from watchlist** — permanently removes the film from the current watchlist snapshot without rating it. Rankings update immediately.
 
 ---
 
-## ⭐ Interactive Features (Live Editing, Instant Re-Ranking)
+### 🔁 Ranked Rewatches
 
-Taste Matcher supports full **live mutation** of your data — no need to re-export CSVs unless you want to.
-
-### ✅ Add a new rating (manual)
-
-Supports:
-- Title
-- Year (optional)
-- Letterboxd URL (optional)
-- **TMDb URL or ID (recommended — auto-fills title & year)**
-- Your rating
-
-The backend:
-- Resolves TMDb metadata (only once — cached)
-- Prevents duplicates via **triple check** (URL + title+year + TMDb ID)
-- Updates the taste model
-- Re-ranks both watchlist + rewatches instantly
-- Never re-calls TMDb for previously seen films
-
-### ✅ Add a film to your watchlist (manual)
-
-Supports:
-- Title
-- Year
-- Letterboxd URL
-- **TMDb URL/ID for instant, accurate metadata**
-
-The backend:
-- Rejects duplicates (triple check: URL + title+year + TMDb ID)
-- If it's already rated → automatically moves it to **rewatches**
-- Otherwise adds it to the watchlist
-- Updates ranking without extra TMDb calls
-
-### ✅ Mark a film as "Watched"
-
-For any film in your watchlist:
-- Removes it from the watchlist
-- Prompts for a rating
-- Adds/updates the rating
-- Moves it to the **rewatch list**
-- Recomputes taste model + rankings instantly
-
-### ✅ Remove from Watchlist
-
-Permanently removes a film from your current watchlist snapshot without rating it. Rankings update instantly.
-
-### ✅ Ranked Rewatches
-
-Rewatches are ranked by a formula that keeps **your rating as the anchor**, with the taste model acting as a modifier:
+Films that appear in both your ratings and your watchlist (i.e. films you've already seen but kept on your watchlist). Ranked by a formula that keeps your own rating as the anchor, using the taste model only as a modifier:
 
 ```
 rewatchScore = userRatingNorm × (0.70 + 0.30 × modelScore)
 ```
 
 - A 5★ film the model also loves → up to **1.00**
-- A 5★ film the model disagrees with → **0.70** (still high)
-- A 2★ film the model loves → max ~**0.52** (can't sneak above your 3★+ films)
+- A 5★ film the model disagrees with → **0.70** (still ranked high)
+- A 2★ film the model loves → max **~0.52** (can't outrank your 3★+ films)
 
-This gives you a priority list of films you're most likely to enjoy rewatching, without letting the model override your own taste.
+Each card shows your rating, the model's score, a rewatch priority bar, and a score breakdown.
 
-### ✅ Hide a Rewatch
-
-Click **"Hide from rewatches"** on any rewatch card to remove it from the ranked rewatch list. Persists across restarts.
-
-### ⚡ TMDb metadata is fetched only once
-
-All metadata — genres, directors, writers, keywords, collections, etc. — is cached permanently.
-Future operations reuse this cached data and never touch TMDb again.
+**Hide from rewatches** — permanently removes a film from the rewatch list. Persists across restarts.
 
 ---
 
-## ⭐ Genre Profile (Interactive)
+### 📊 Genre Profile
 
-Shows:
+A visual overview of your taste broken down by genre:
 
-- Average rating you give each genre
-- Number of films in that genre
-- Visual preference bars
+- Bayesian-smoothed average rating per genre (pulled toward your global mean for small sample sizes)
+- Film count per genre
+- Visual preference bar (relative to your highest-rated genre)
 
-**Click a genre card → expands into all films you rated in that genre.**
-
-Includes posters + your rating. Search within the genre list.
+Click any genre card to expand it into a full list of every film you've rated in that genre, with posters, your rating, and a search filter.
 
 ---
 
-## ⭐ Ranked Watchlist
+### 🔍 Rated Films
 
-Your entire watchlist is ranked using a full **multi-factor taste model**, enriched with TMDb data and your entire rating history.
+Browse and search your entire rating history with full TMDb enrichment (poster, genres, TMDb score). Loads all your rated films immediately on open, sorted highest-rated first by default.
 
-### What influences your ranking:
+**Sort controls:**
+- **Highest rated** — your top-rated films first; ties sorted alphabetically
+- **Lowest rated** — your lowest-rated films first; ties sorted alphabetically
 
-- **Genre affinity** – how much you like its genres
-- **Keyword affinity** – mood/theme/tone similarity using TMDb keywords
-- **Director affinity** – how much you like the directors' other work
-- **TMDb community rating** – normalized quality baseline
-- **Neighbour similarity** – how close this film is to your highest-rated films (k-NN over genres/keywords/era/regions/directors)
-- **Writer affinity** – how much you like their screenwriters
-- **Geography affinity** – how highly you rate films from similar film cultures
-- **Decade affinity** – taste for specific eras (70s, 90s, 2010s, etc.)
-- **Collection affinity** – franchise/universe you already enjoy
+**Change rating** — every card has a "Change rating" button that opens the star picker pre-filled with your current rating. Saving a new rating immediately invalidates the taste model and ranked watchlist caches so the next calculation reflects the change.
 
-These are normalized (0–1), weighted, and turned into a **predictedScore** for every watchlist film.
-
-### UI includes:
-
-- Poster
-- Title + year
-- Genres
-- TMDb rating
-- Match percentage (color-coded bar)
-- Rank number
-- Score breakdown pills (top contributors)
-- Director names
-
-### Filters:
-
-- **Text search** — filter by title or genre
-- **Year** — exact year (e.g. `2019`)
-- **Decade** — e.g. `1990s`
-- **Director** — All / Only watched directors / Only new directors
+Search filters to title in real time as you type.
 
 ---
 
-## ⭐ Export Ranked Watchlist to Letterboxd
+### ⚠️ Unresolved Films
 
-Once your watchlist is ranked, you can export it as a **Letterboxd list CSV** to import straight into a new List on Letterboxd.
+Films from your CSVs that couldn't be matched to a TMDb entry. Each item shows:
 
-From the UI:
-
-- Click **"Export Ranked Watchlist → Letterboxd"**
-- Choose whether to **include rewatches** in the exported list:
-  - **OK** → watchlist items + visible rewatches, ranked together
-  - **Cancel** → watchlist items only
-
-The browser downloads the CSV directly. Then:
-
-1. Create a new list on Letterboxd
-2. Use their "Import" feature
-3. Upload the generated CSV
-4. Get your Taste Matcher ranking as a Letterboxd list in one go
+- Title and year
+- Source (ratings or watchlist)
+- Link to its Letterboxd page
+- "Search TMDb ↗" — opens a TMDb search in your browser so you can find the correct entry
+- "Add / Resolve" — opens a modal to manually supply the correct TMDb URL or ID, permanently resolving the film and removing it from the unresolved list
 
 ---
 
-## 7️⃣ API Endpoints
+## ⚙️ Settings Drawer
 
-| Route | Method | Description |
-|-------|--------|-------------|
-| `/api/ratings` | GET | Raw ratings list |
-| `/api/watchlist` | GET | Watchlist after removing rewatches |
-| `/api/overlap` | GET | Full rewatch list (with metadata) |
-| `/api/genre-profile` | GET | Multi-dimensional taste model |
-| `/api/genre-titles/:id` | GET | Rated films filtered by genre |
-| `/api/recommendations` | GET | Ranked watchlist |
-| `/api/rewatch-ranking` | GET | Ranked rewatch list |
-| `/api/export-ranked-watchlist` | GET | Export ranked Letterboxd list CSV (`?includeRewatches=true\|false`) |
-| `/api/reload-watchlist` | POST | Reload `watchlist.csv` only — keeps ratings + taste model intact |
-| `/api/reset-state` | POST | Reset everything back to the original CSV baseline |
-| `/api/mark-watched` | POST | Remove from watchlist → add/update rating, move to rewatches |
-| `/api/add-rating` | POST | Add a rating (TMDb URL/ID supported, triple duplicate-safe) |
-| `/api/add-to-watchlist` | POST | Add a film to watchlist (rewatch-aware, triple duplicate-safe) |
-| `/api/remove-from-watchlist` | POST | Permanently remove a title from the current watchlist |
-| `/api/hide-rewatch` | POST | Hide a rewatch so it never appears in ranked rewatches |
+Accessible via the ⚙ button. Shows live stats (rated films, watchlist size, rewatches, unresolved count) and a TMDb connection badge.
 
-### 🔁 Hot Reload Watchlist
-
-- Replace `data/watchlist.csv` with any Letterboxd export
-- Press **"Reload Watchlist"** in the UI (or POST `/api/reload-watchlist`)
-- The backend:
-  - Parses any watchlist/list CSV format
-  - Recomputes overlap (rewatches)
-  - Keeps your ratings cache + taste model intact
-  - Rebuilds recommendations instantly
-
-### 🔄 Reset State to CSV
-
-If you've made manual mutations and want to start fresh:
-
-- Press **"Reset state to CSV"** in the UI (or POST `/api/reset-state`)
-- Reverts ratings, watchlist, and overlap back to what's in your CSV files
-- Clears all hidden rewatches
+Actions:
+- **📂 New Ratings CSV** — pick a new ratings export file; imports it and resets to the new baseline
+- **📂 New Watchlist CSV** — pick a new watchlist/list CSV; reloads the watchlist while keeping all ratings and the TMDb cache intact
+- **⚠ Reset to CSV** — discards all manual in-session mutations and reverts the entire state back to the originally imported CSV files
+- **← Back to Setup** — returns to the setup wizard (useful if you want to change your TMDb key or import new files from scratch)
 
 ---
 
-## 8️⃣ Cache System
+## ✏️ Live Mutations
 
-The server persists data into:
+All mutations update in memory immediately, persist to disk, and invalidate only the relevant caches — no TMDb calls are ever repeated for films already seen.
 
-```
-cache/
-  tmdb_cache.json        # TMDb metadata for every film you've touched
-  derived_cache.json     # taste model + recommendations + rewatch ranking
-  hidden_rewatches.json  # rewatches you've chosen to hide
-  data_state.json        # current ratings + watchlist + overlap (instant restarts)
-```
+### Add Rating
 
-### What this means:
+Supports: Letterboxd URL, TMDb URL or numeric ID (auto-resolves title & year), or title + year manually. Half-star precision (0.5–5.0). Duplicate-safe via triple check: URL match, title+year match, and TMDb ID match.
 
-- First run → slow (lots of TMDb calls)
-- Every later run → instant
-- Manual mutations (add rating, mark watched, etc.) survive restarts via `data_state.json`
+After adding, the ranked watchlist automatically recalculates.
 
-### When to delete cache:
+### Change Rating
 
-- You updated your Letterboxd CSVs and want a full rebuild
-- You changed the taste model algorithm
-- You want a clean slate
+Available on every card in the Rated Films section. Opens the star picker pre-filled with the current rating. On save, invalidates the taste model and ranked watchlist caches.
 
-> You can also use **"Reset state to CSV"** in the UI to revert data without deleting the TMDb cache.
+### Add to Watchlist
 
-**macOS / Linux:**
-```
-rm -rf cache
-```
+Supports: Letterboxd URL, TMDb URL or numeric ID, or title + year. If the film is already in your ratings, it's automatically moved to the rewatch list instead. Duplicate-safe (same triple check as above).
 
-**Windows PowerShell:**
-```
-Remove-Item cache -Recurse -Force
-```
+### Mark Watched & Rate
 
-Then restart:
-```
-node server.js
-```
+From any ranked watchlist card. Removes the film from the watchlist, prompts for a rating, adds it to your ratings, and moves it to rewatches. Rankings update live — the card disappears from the watchlist immediately.
+
+### Remove from Watchlist
+
+Permanently removes a film from the current watchlist state. Rankings update immediately.
+
+### Reload Watchlist
+
+Replace your watchlist with any new Letterboxd list export using the Settings drawer. The backend re-parses the CSV, recomputes the overlap (rewatches), and rebuilds the ranked watchlist — your ratings and TMDb cache are untouched.
+
+### Hide Rewatch
+
+Permanently hides a film from the ranked rewatch list. Stored in `hidden_rewatches.json` and survives restarts.
+
+---
+
+## 📤 Export Ranked Watchlist
+
+Exports your ranked watchlist as a Letterboxd-compatible list CSV (v7 format), ready to import directly into a new Letterboxd list.
+
+Options:
+- **Watchlist only** — just your ranked unwatched films
+- **Include rewatches** — combines watchlist + visible rewatches, re-scored and re-ranked together
+
+The file downloads as `ranked-watchlist-YYYY-MM-DD.csv`.
+
+To use it: create a new list on Letterboxd → Import → upload the CSV.
 
 ---
 
 ## 🔍 Taste Model Algorithm
 
-Taste Matcher builds a **multi-dimensional taste vector** from your Letterboxd ratings and applies it to every film in your watchlist.
+### 1. Input Data
 
-### 1. Data Inputs
+From your `ratings.csv` and `watchlist.csv`:
+- Title, year, Letterboxd URL, your rating (0.5–5.0)
+- Overlap detection: URL match first, then title+year fallback
 
-From `ratings.csv` and `watchlist.csv`:
-- Title, year
-- Your rating (0–5)
-- Letterboxd URL
-- Rewatch detection via URL matching **and** title+year fallback
+### 2. TMDb Enrichment
 
-### 2. TMDb Metadata (enriched & cached)
-
-For every film (ratings + watchlist):
+For every film in both files, the backend fetches and permanently caches:
 - Genres
-- Directors / Writers
-- Production countries → Regions (Europe, Asia, NA, etc.)
-- Release year → Decade (1980s, 2010s…)
-- Keywords (themes, tone, mood)
-- Collection ID & name (sagas, franchises)
-- vote_average (community baseline)
+- Directors & writers (from credits)
+- Production countries → mapped to regions (Europe, Asia, North America, etc.)
+- Release year → decade (1970s, 1980s, …)
+- Keywords (themes, mood, tone)
+- Collection / franchise membership
+- TMDb community vote average
 
-### 3. Taste Profiles
+### 3. Taste Profiles (Bayesian-smoothed)
 
-From all your rated films, the backend builds Bayesian-smoothed profiles:
+A profile is built for every dimension using Bayesian smoothing with k=5, pulling low-sample keys toward your global mean to avoid over-fitting on one or two films:
 
 ```
-genreProfile[genreId]
-directorProfile[name]
-writerProfile[name]
-countryProfile["US"/"JP"/etc]
-regionProfile["Asia"/"Europe"]
-decadeProfile[1970, 1980...]
-keywordProfile["surrealism", "slow-burn"...]
-collectionProfile[id]
+smoothedScore[key] = (totalRating + globalMean × 5) / (count + 5)
 ```
 
-Each value = weighted average of your ratings for that factor, pulled toward your global mean for low-sample keys.
+Profiles built: genre, director, writer, country, region, decade, keyword, collection.
 
-### 4. Nearest-Neighbour Similarity
+### 4. Nearest-Neighbour Component
 
-For each watchlist film, the model finds the most similar films in your rated history using **Jaccard similarity** over genres, keywords, decade, regions, and directors. The top 30 neighbours (above a 0.12 similarity threshold) are used to compute a weighted-rating score.
+For each candidate film, the model finds the most similar films in your rating history using Jaccard similarity over genres, keywords, decade, regions, and directors:
 
 ```
 filmSim = 0.50 × genreJaccard + 0.35 × keywordJaccard + 0.20 × regionJaccard + 0.15 × directorMatch + 0.15 × eraScore
-neighbourSimilarity = Σ(sim × rating) / Σ(sim) × confidence
 ```
 
-Confidence scales with the number of neighbours found (saturates at 8+).
+Top 30 neighbours above a 0.12 similarity threshold are used. The component confidence scales with the number of neighbours found (saturates at 8+).
 
 ### 5. Final Weighted Score
 
 ```
 predictedScore =
-  0.18 × genreAffinity       +
-  0.22 × keywordAffinity     +
-  0.10 × directorAffinity    +
-  0.15 × tmdbScoreNorm       +
-  0.10 × neighbourSimilarity +
-  0.08 × writerAffinity      +
-  0.07 × countryRegionAffinity +
-  0.05 × decadeAffinity      +
+  0.18 × genreAffinity        +
+  0.22 × keywordAffinity      +
+  0.10 × directorAffinity     +
+  0.08 × writerAffinity       +
+  0.15 × tmdbScoreNorm        +
+  0.10 × neighbourSimilarity  +
+  0.07 × geoAffinity          +
+  0.05 × decadeAffinity       +
   0.05 × collectionAffinity
 ```
 
-All weights sum to **1.00**.
+Weights sum to **1.00**. All components are normalized to 0–1 before weighting.
 
 ### 6. Ranking
 
-- Converted to percent match
-- Sorted descending
-- Rendered as your ranked watchlist
-
-Rewatches receive a separate ranking:
-
-```
-rewatchScore = userRatingNorm × (0.70 + 0.30 × predictedScore)
-```
+Scores are converted to a match percentage and sorted descending. Rewatches use the separate anchored formula above and are ranked independently.
 
 ---
 
-## 🐛 Bugs Fixed in v2
+## 💾 Cache System
 
-| Fix | Description |
-|-----|-------------|
-| **Overlap detection** | Now uses URL match first, with title+year as fallback. Films with different URL formats but the same title/year are correctly identified as rewatches. |
-| **Unified scoring function** | A single shared `scoreItem()` is used by watchlist ranking, rewatch ranking, and export. Previously the export used a different code path and could return a different order than the UI. |
-| **Rewatch ranking formula** | Old formula (`0.6 × rating + 0.4 × model`) allowed low-rated films to rank above high-rated ones if the model disagreed. New formula anchors to rating and only nudges ±30%. |
-| **Triple duplicate check** | `add-rating` and `add-to-watchlist` now check for duplicates by URL, by title+year, and by TMDb ID — preventing phantom duplicates when a film is added by different methods. |
-| **Export format** | Export now uses the correct Letterboxd list export v7 format and streams as a direct browser download instead of writing a file to disk. |
-| **Derived cache invalidation** | Old `derived_cache.json` entries missing `ratedItemsMeta` (required by the neighbour component) are now detected and discarded on load, forcing a clean rebuild. |
+| File | What it stores |
+|------|---------------|
+| `tmdb_cache.json` | Every TMDb API response ever fetched — never re-fetched |
+| `derived_cache.json` | Taste model, ranked watchlist, rewatch ranking |
+| `data_state.json` | Live ratings + watchlist + overlap (survives restarts) |
+| `hidden_rewatches.json` | Permanently hidden rewatch entries |
+
+**First run** — slow, fetches TMDb data for every film in both CSVs.  
+**Every subsequent run** — instant, loads everything from disk.  
+**After mutations** — only affected caches are invalidated; TMDb data is never re-fetched.
+
+### Full Wipe (Fresh Start)
+
+Delete the entire user data folder:
+
+| Platform | Command |
+|----------|---------|
+| Windows  | Delete `%APPDATA%\Taste Matcher\` in Explorer, or: `Remove-Item "$env:APPDATA\Taste Matcher" -Recurse -Force` |
+| macOS    | `rm -rf ~/Library/Application\ Support/Taste\ Matcher/` |
+| Linux    | `rm -rf ~/.config/Taste\ Matcher/` |
+
+Restart the app — it will open the setup wizard.
+
+### Partial Wipe (Keep TMDb Cache)
+
+If you only want to reset your data (new CSVs, fresh state) but don't want to re-fetch all the TMDb metadata, use **"Reset to CSV"** in the Settings drawer, or manually delete only `data_state.json` and `derived_cache.json` from the cache folder.
 
 ---
 
-## 9️⃣ Quickstart Summary
+## 🔌 API Reference
 
-```
-git clone <repo>
-cd taste-matcher
-# add ratings.csv & watchlist.csv to /data/
-# add TMDB_API_KEY to .env
-npm init -y
-npm install express axios csv-parse dotenv
-node server.js
-# open http://localhost:3000/
-```
+The Express server runs on `http://127.0.0.1:47291` internally. All routes are also accessible from a browser if you want to inspect raw data.
 
-Done. Enjoy your personalized watchlist ranking ✨
+| Route | Method | Description |
+|-------|--------|-------------|
+| `/api/ratings` | GET | Raw ratings array |
+| `/api/watchlist` | GET | Watchlist after removing rewatches |
+| `/api/overlap` | GET | Full rewatch list with TMDb metadata |
+| `/api/genre-profile` | GET | Bayesian genre taste model |
+| `/api/genre-titles/:id` | GET | All rated films in a genre |
+| `/api/search-ratings?q=` | GET | Search rated films by title; `?all=true` returns all |
+| `/api/recommendations` | GET | Ranked watchlist |
+| `/api/rewatch-ranking` | GET | Ranked rewatch list |
+| `/api/failed-items` | GET | Unresolved films list |
+| `/api/app-status` | GET | Stats for the settings panel |
+| `/api/export-ranked-watchlist` | GET | Download ranked Letterboxd CSV (`?includeRewatches=true\|false`) |
+| `/api/reload-watchlist` | POST | Re-parse watchlist CSV, recompute overlap, keep ratings intact |
+| `/api/reset-state` | POST | Revert all state to original CSV baseline |
+| `/api/invalidate-recommendations` | POST | Force a fresh recalculation on next `/api/recommendations` call |
+| `/api/mark-watched` | POST | Remove from watchlist → add/update rating → move to rewatches |
+| `/api/add-rating` | POST | Add a new rating (TMDb URL/ID supported, triple duplicate-safe) |
+| `/api/update-rating` | POST | Change the rating on an existing entry |
+| `/api/add-to-watchlist` | POST | Add a film to the watchlist (rewatch-aware, triple duplicate-safe) |
+| `/api/remove-from-watchlist` | POST | Remove a film from the current watchlist |
+| `/api/hide-rewatch` | POST | Permanently hide a film from the rewatch list |
 
 ---
 
 ## 📜 License
 
-MIT License – see [LICENSE](./LICENSE) for full details.
+MIT — see [LICENSE](./LICENSE) for full details.
