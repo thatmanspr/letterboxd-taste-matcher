@@ -6,6 +6,10 @@
 
 Taste Matcher is a desktop app (built with Electron + Node.js) that reads your Letterboxd ratings, fetches rich metadata from TMDb, builds a multi-dimensional taste model, and ranks every film in your watchlist from most-likely-to-enjoy to least. Everything runs locally — no accounts, no cloud, no subscriptions.
 
+---
+
+Before we begin, I made this as a part of my university project, so should it interest you, a Statement of Work, SRS Document, SDS Document, Fully written Report and an Agile Sprint Tracker Document have also been uploaded! Thank you.
+
 ### 📂 Source Code
 
 The full source is available on the main branch:
